@@ -39,6 +39,16 @@ ScaffoldingReadMe.txt
 # dotenv environment variables file
 .env
 
+# Freebuff
+.freebuff/
+
+# Build CMake
+build/
+out/
+
+# SDK .NET installé localement (version C#)
+.dotnet/
+
 # Others
 ~$*
 *~

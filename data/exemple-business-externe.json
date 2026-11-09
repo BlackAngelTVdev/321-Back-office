@@ -1,0 +1,21 @@
+{
+    "schemaVersion": 1,
+    "id": "COM-0042",
+    "name": "Le Mille-Miettes",
+    "logo": "assets/logo-mille-miettes.png",
+    "special": "PROD-0104",
+    "products": [
+        {
+            "id": "PROD-0101",
+            "name": "Croissant pur beurre",
+            "picture": "assets/produit-croissant.png",
+            "priceCents": 380
+        },
+        {
+            "id": "PROD-0104",
+            "name": "Tarte aux myrtilles",
+            "picture": "assets/produit-tarte.png",
+            "priceCents": 650
+        }
+    ]
+}

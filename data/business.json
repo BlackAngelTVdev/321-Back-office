@@ -1,0 +1,11 @@
+{
+    "ID": "COM-0112",
+    "Name": "DJ Dam's",
+    "Logo": "assets/logo-chez-leon.png",
+    "Special": {
+        "ID": "PROD-1109",
+        "Name": "eclair au chocolat",
+        "Picture": "assets/produit-tarte.png",
+        "Price": 4.5
+    }
+}
