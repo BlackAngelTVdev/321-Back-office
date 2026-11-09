@@ -110,7 +110,7 @@ Le prix est stocké en centimes dans le code (pour éviter les erreurs d'arrondi
 }
 ```
 
-- `Logo` et `Picture` acceptent un chemin relatif au JSON ou un data URI base64 ; l'export produit toujours des data URI.
+- `Logo` et `Picture` acceptent un chemin relatif au JSON ou un data URI base64 ; l'enregistrement et l'export embarquent toujours les images en data URI base64.
 - `Special` est le **produit phare complet** (objet), pas seulement son ID.
 - `Products` n'est écrit **que s'il existe d'autres produits** que le produit phare, pour ne jamais perdre la liste du back-office.
 - `Time` est l'heure du commerce, au format `HH:mm`. Si elle est absente (ou invalide), l'heure du PC est utilisée et écrite à la sauvegarde ; le bouton « Heure du PC » la remplit à tout moment.

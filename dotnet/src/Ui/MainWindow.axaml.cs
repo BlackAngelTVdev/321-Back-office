@@ -509,7 +509,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        await SaveToAsync(_filePath, embedImages: false);
+        // Comme l'export : images embarquées en base64, fichier autonome.
+        await SaveToAsync(_filePath, embedImages: true);
     }
 
     private async Task ExportSingleFileAsync()

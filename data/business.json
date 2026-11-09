@@ -1,11 +1,12 @@
 {
     "ID": "COM-0112",
     "Name": "DJ Dam's",
-    "Logo": "assets/logo-chez-leon.png",
+    "Logo": "/home/damien/Téléchargements/Gemini_Generated_Image_s1je17s1je17s1je.jpg",
+    "Time": "09:14",
     "Special": {
         "ID": "PROD-1109",
         "Name": "eclair au chocolat",
-        "Picture": "assets/produit-tarte.png",
-        "Price": 4.5
+        "Picture": "/mnt/disque2/dev/321-Back-office/assets/images.jpg",
+        "Price": 3
     }
 }
