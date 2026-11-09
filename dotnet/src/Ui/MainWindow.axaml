@@ -89,7 +89,7 @@
                 Padding="16">
           <StackPanel Spacing="10">
             <TextBlock Text="Fiche du commerce" FontWeight="SemiBold" />
-            <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="8">
+            <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="8">
 
               <TextBlock Grid.Row="0" Grid.Column="0" Text="ID (COM-XXXX)"
                          Foreground="#8B95A5" VerticalAlignment="Center" />
@@ -106,9 +106,16 @@
                 <Button x:Name="BrowseLogoButton" Grid.Column="1" Content="Parcourir…" />
               </Grid>
 
-              <TextBlock Grid.Row="3" Grid.Column="0" Text="Produit phare"
+              <TextBlock Grid.Row="3" Grid.Column="0" Text="Heure (HH:mm)"
                          Foreground="#8B95A5" VerticalAlignment="Center" />
-              <ComboBox x:Name="SpecialCombo" Grid.Row="3" Grid.Column="1"
+              <Grid Grid.Row="3" Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                <TextBox x:Name="TimeBox" Grid.Column="0" Watermark="09:30" />
+                <Button x:Name="NowButton" Grid.Column="1" Content="Heure du PC" />
+              </Grid>
+
+              <TextBlock Grid.Row="4" Grid.Column="0" Text="Produit phare"
+                         Foreground="#8B95A5" VerticalAlignment="Center" />
+              <ComboBox x:Name="SpecialCombo" Grid.Row="4" Grid.Column="1"
                         HorizontalAlignment="Stretch" />
 
             </Grid>

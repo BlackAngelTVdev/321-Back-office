@@ -36,6 +36,7 @@ public partial class MainWindow : Window
         WireEvents();
 
         _statusTimer.Tick += OnStatusTimerTick;
+        _business.Time = Validation.CurrentTime();
 
         PublishButton.IsEnabled = MqttPublisher.ConfigFromEnvironment() is not null;
         ToolTip.SetTip(
@@ -130,6 +131,8 @@ public partial class MainWindow : Window
         NameBox.LostFocus += (_, _) => ApplyNameEdit();
         IdBox.LostFocus += (_, _) => ApplyIdEdit();
         LogoBox.LostFocus += (_, _) => ApplyLogoEdit();
+        TimeBox.LostFocus += (_, _) => ApplyTimeEdit();
+        NowButton.Click += (_, _) => UseComputerTime();
         SpecialCombo.SelectionChanged += (_, _) => ApplySpecial();
 
         ProductList.SelectionChanged += (_, _) => SelectProduct(ProductList.SelectedIndex);
@@ -146,6 +149,7 @@ public partial class MainWindow : Window
         IdBox.Text = _business.Id;
         NameBox.Text = _business.Name;
         LogoBox.Text = _business.Logo;
+        TimeBox.Text = _business.Time;
 
         RefreshSpecialCombo();
         RefreshProducts();
@@ -276,6 +280,30 @@ public partial class MainWindow : Window
     {
         _business.Logo = (LogoBox.Text ?? string.Empty).Trim();
         RefreshHeader();
+    }
+
+    private void ApplyTimeEdit()
+    {
+        var normalized = Validation.NormalizeTime(TimeBox.Text);
+        if (normalized is null)
+        {
+            TimeBox.Text = _business.Time;
+            _ = Dialogs.ShowWarningAsync(
+                this,
+                "Heure invalide",
+                "L'heure doit respecter le format HH:mm (exemple : 09:30).");
+            return;
+        }
+
+        _business.Time = normalized;
+        TimeBox.Text = normalized;
+    }
+
+    private void UseComputerTime()
+    {
+        _business.Time = Validation.CurrentTime();
+        TimeBox.Text = _business.Time;
+        ShowStatus($"Heure du PC : {_business.Time}");
     }
 
     private void ApplySpecial()
@@ -621,6 +649,11 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(_business.Name))
         {
             problems.Add("Le nom du commerce est vide.");
+        }
+
+        if (!Validation.IsValidTime(_business.Time))
+        {
+            problems.Add("L'heure du commerce est invalide (format attendu HH:mm).");
         }
 
         if (_business.Products.Count == 0)

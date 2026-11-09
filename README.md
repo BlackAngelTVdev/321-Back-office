@@ -79,6 +79,7 @@ run.sh / run.cmd             build + lancement
 | `ID` | string | **obligatoire**, `^COM-[0-9]{4}$`, identifie le commerce sans ambiguïté |
 | `Name` | string | **obligatoire**, nom public du commerce |
 | `Logo` | image 16:9 | **obligatoire**, chemin relatif au JSON ou data URI base64 |
+| `Time` | heure | `HH:mm` ; si absente (ou invalide), l'heure du PC est utilisée |
 | `Special` | produit | **obligatoire**, produit phare (objet complet), doit faire partie des produits |
 
 ### Produit
@@ -99,6 +100,7 @@ Le prix est stocké en centimes dans le code (pour éviter les erreurs d'arrondi
     "ID": "COM-7777",
     "Name": "Aux Mille Miettes",
     "Logo": "data:image/webp;base64,UklGR...",
+    "Time": "09:30",
     "Special": {
         "ID": "PROD-7777",
         "Name": "Millefeuille",
@@ -111,6 +113,7 @@ Le prix est stocké en centimes dans le code (pour éviter les erreurs d'arrondi
 - `Logo` et `Picture` acceptent un chemin relatif au JSON ou un data URI base64 ; l'export produit toujours des data URI.
 - `Special` est le **produit phare complet** (objet), pas seulement son ID.
 - `Products` n'est écrit **que s'il existe d'autres produits** que le produit phare, pour ne jamais perdre la liste du back-office.
+- `Time` est l'heure du commerce, au format `HH:mm`. Si elle est absente (ou invalide), l'heure du PC est utilisée et écrite à la sauvegarde ; le bouton « Heure du PC » la remplit à tout moment.
 - La lecture reste tolérante : clés `ID`/`id`, `Special` objet ou simple ID, `Price` en francs ou `priceCents` en centimes.
 
 Les chemins d'images sont **relatifs au fichier JSON** : un dossier `data/` + `assets/` reste donc portable d'une machine à l'autre. Si un chemin n'existe pas à côté du JSON, la version C# cherche le même chemin dans le dossier parent (ce qui fait fonctionner tel quel `data/business.json` pointant sur `assets/` à la racine du dépôt).

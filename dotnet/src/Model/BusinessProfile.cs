@@ -6,6 +6,7 @@ namespace BackOffice.Model;
 /// - name : nom public du commerce
 /// - logo : image 16:9 (chemin relatif au fichier JSON, ou data URI base64)
 /// - special : produit phare, référencé par son ID produit
+/// - time : heure au format HH:mm (importée, sinon heure du PC)
 /// Le back-office étend ce modèle avec la liste des produits.
 /// </summary>
 public sealed class BusinessProfile
@@ -13,6 +14,10 @@ public sealed class BusinessProfile
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string Logo { get; set; } = string.Empty;
+
+    /// <summary>Heure « HH:mm » importée ; si absente du fichier, l'heure du PC est utilisée.</summary>
+    public string Time { get; set; } = string.Empty;
+
     public string SpecialProductId { get; set; } = string.Empty;
     public List<Product> Products { get; } = new();
 
