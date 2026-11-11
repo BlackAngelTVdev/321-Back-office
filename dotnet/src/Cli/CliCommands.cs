@@ -47,9 +47,9 @@ internal static class CliCommands
         }
 
         var config = MqttPublisher.ConfigFromEnvironment();
-        if (config is null)
+        if (config is null || string.IsNullOrWhiteSpace(config.Topic))
         {
-            Console.WriteLine("erreur: BACKOFFICE_MQTT_URL et BACKOFFICE_MQTT_TOPIC doivent être définis");
+            Console.WriteLine("erreur: le broker et BACKOFFICE_MQTT_TOPIC doivent être définis (fichier .env)");
             return 1;
         }
 

@@ -63,7 +63,23 @@ public static class TimeStore
 
         try
         {
-            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            return Parse(File.ReadAllText(path));
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Horodatage (secondes Unix) d'un contenu JSON, par exemple un message MQTT
+    /// <c>{ "UnixTimeStamp": 1794218169 }</c> ; null si illisible ou invalide.
+    /// </summary>
+    public static long? Parse(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
             return ReadUnixTime(document.RootElement) is long value && Validation.IsValidUnixTime(value)
                 ? value
                 : null;

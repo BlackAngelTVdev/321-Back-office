@@ -23,6 +23,9 @@ public partial class MainWindow : Window
     private Bitmap? _specialBitmap;
     private bool _suppressSpecialChange;
     private string? _pendingFile;
+    private MqttTimeSubscriber? _timeSubscriber;
+    private long? _mqttUnixTime;
+    private DateTime _mqttReceivedUtc;
 
     public MainWindow()
         : this(null)
@@ -41,10 +44,11 @@ public partial class MainWindow : Window
         RefreshTimeLabel();
         ScheduleClockTick();
 
-        PublishButton.IsEnabled = MqttPublisher.ConfigFromEnvironment() is not null;
+        var publishConfig = MqttPublisher.ConfigFromEnvironment();
+        PublishButton.IsEnabled = !string.IsNullOrWhiteSpace(publishConfig?.Topic);
         ToolTip.SetTip(
             PublishButton,
-            "Publie le business sur le broker défini par BACKOFFICE_MQTT_URL et BACKOFFICE_MQTT_TOPIC.");
+            "Publie le business sur le broker et le topic définis dans .env (BACKOFFICE_MQTT_TOPIC).");
 
         RefreshHeader();
         RefreshProducts();
@@ -99,6 +103,7 @@ public partial class MainWindow : Window
     protected override async void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
+        StartTimeSubscription();
 
         var file = _pendingFile;
         _pendingFile = null;
@@ -120,6 +125,7 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         _clockTimer.Stop();
+        _timeSubscriber?.Dispose();
         _logoBitmap?.Dispose();
         _specialBitmap?.Dispose();
         DisposeRows();
@@ -289,13 +295,55 @@ public partial class MainWindow : Window
         RefreshHeader();
     }
 
-    /// <summary>Heure lue dans time.json (relue à chaque tick), sinon heure du PC.</summary>
+    /// <summary>
+    /// Heure reçue par MQTT (prioritaire, avance avec le temps écoulé depuis le message),
+    /// sinon time.json, sinon heure du PC.
+    /// </summary>
     private void RefreshTimeLabel()
     {
-        var unixTimeStamp = TimeStore.Resolve(_filePath);
-        TimeLabel.Text = $"Heure : {Validation.FormatUnixTime(unixTimeStamp)}";
-        TimeStampLabel.Text = $"UnixTimeStamp : {unixTimeStamp}";
+        if (_mqttUnixTime is long received)
+        {
+            var elapsed = (long)(DateTime.UtcNow - _mqttReceivedUtc).TotalSeconds;
+            var unixTimeStamp = received + Math.Max(elapsed, 0);
+
+            TimeLabel.Text = $"Heure : {Validation.FormatUnixTime(unixTimeStamp)} (MQTT)";
+            TimeStampLabel.Text = $"UnixTimeStamp : {unixTimeStamp}";
+            return;
+        }
+
+        var fromFile = TimeStore.Resolve(_filePath);
+        TimeLabel.Text = $"Heure : {Validation.FormatUnixTime(fromFile)}";
+        TimeStampLabel.Text = $"UnixTimeStamp : {fromFile}";
     }
+
+    /// <summary>Abonnement au topic d'heure (BACKOFFICE_MQTT_TIME_TOPIC) : chaque message met l'horloge à jour.</summary>
+    private void StartTimeSubscription()
+    {
+        var config = MqttTimeSubscriber.ConfigFromEnvironment();
+        if (config is null || string.IsNullOrWhiteSpace(config.Topic))
+        {
+            return;
+        }
+
+        _timeSubscriber = new MqttTimeSubscriber(config, OnMqttTime, OnMqttStatus);
+        _timeSubscriber.Start();
+    }
+
+    private void OnMqttTime(long unixTimeStamp)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            _mqttUnixTime = unixTimeStamp;
+            _mqttReceivedUtc = DateTime.UtcNow;
+            RefreshTimeLabel();
+            ScheduleClockTick();
+            ShowStatus(
+                $"Heure MQTT reçue : {Validation.FormatUnixTime(unixTimeStamp)} ({unixTimeStamp})", 3000);
+        });
+    }
+
+    private void OnMqttStatus(string message)
+        => Dispatcher.UIThread.Post(() => ShowStatus(message, 6000));
 
     /// <summary>Programme le prochain rafraîchissement sur la minute pleine suivante.</summary>
     private void ScheduleClockTick()
@@ -499,7 +547,7 @@ public partial class MainWindow : Window
         _baseDir = BusinessStore.DirectoryOf(filePath);
         _warnings = new List<string>(result.Warnings);
 
-        if (TimeStore.Read(_filePath) is null)
+        if (_mqttUnixTime is null && TimeStore.Read(_filePath) is null)
         {
             _warnings.Add($"Heure introuvable ou invalide ({TimeStore.FileName}) : heure du PC affichée.");
         }
@@ -575,12 +623,12 @@ public partial class MainWindow : Window
     private async Task PublishCurrentAsync()
     {
         var config = MqttPublisher.ConfigFromEnvironment();
-        if (config is null)
+        if (config is null || string.IsNullOrWhiteSpace(config.Topic))
         {
             await Dialogs.ShowWarningAsync(
                 this,
                 "MQTT non configuré",
-                "Définissez BACKOFFICE_MQTT_URL (ex. mqtt://localhost:1883) et BACKOFFICE_MQTT_TOPIC.");
+                "Définissez le broker et BACKOFFICE_MQTT_TOPIC dans le fichier .env.");
             return;
         }
 

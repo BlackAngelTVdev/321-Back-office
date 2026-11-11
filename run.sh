@@ -1,19 +1,26 @@
 #!/usr/bin/env bash
-# Compile et lance la version C# / .NET de 321 Back Office.
+# Compile (si nécessaire) et lance 321 Back Office.
+#   ./run.sh [fichier-business.json]   interface graphique
+#   ./run.sh --dump [fichier]          affiche le business sans interface
+#   ./run.sh --no-build ...            lance sans recompiler
 set -euo pipefail
 
-cd "$(dirname "$0")"
+# Fonctionne aussi via un lien symbolique ou depuis un autre dossier.
+cd "$(dirname "$(readlink -f "$0")")"
 
 PROJECT="dotnet/BackOffice.csproj"
 BUILD_DIR="${BUILD_DIR:-dotnet/build}"
+BIN="$BUILD_DIR/BackOffice.dll"
 
 if [ ! -f "$PROJECT" ]; then
   echo "Erreur : projet introuvable ($PROJECT)." >&2
   exit 1
 fi
 
-# SDK local installé dans .dotnet/ (sinon SDK système).
-if [ -x ".dotnet/dotnet" ]; then
+# SDK : $DOTNET, sinon installation locale .dotnet/, sinon SDK système.
+if [ -n "${DOTNET:-}" ] && [ -x "$DOTNET" ]; then
+  :
+elif [ -x ".dotnet/dotnet" ]; then
   DOTNET="$PWD/.dotnet/dotnet"
 elif command -v dotnet >/dev/null 2>&1; then
   DOTNET="dotnet"
@@ -22,14 +29,39 @@ else
   exit 1
 fi
 
-echo "Compilation ..."
-"$DOTNET" build "$PROJECT" -c Release -o "$BUILD_DIR" --nologo -v minimal
+if [ ! -f ".env" ] && [ -f ".env.example" ]; then
+  echo "Info : aucun .env ; copiez .env.example en .env pour configurer le broker MQTT."
+fi
 
-BIN="$BUILD_DIR/BackOffice.dll"
+NO_BUILD=0
+ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --no-build) NO_BUILD=1 ;;
+    *) ARGS+=("$arg") ;;
+  esac
+done
+
+# Recompile seulement si un source est plus récent que le binaire.
+needs_build() {
+  [ ! -f "$BIN" ] && return 0
+  [ -n "$(find dotnet \( -name '*.cs' -o -name '*.axaml' -o -name '*.csproj' \) \
+      -not -path '*/obj/*' -not -path '*/bin/*' -not -path '*/build/*' \
+      -newer "$BIN" -print -quit)" ]
+}
+
+if [ "$NO_BUILD" -eq 0 ] && needs_build; then
+  echo "Compilation ..."
+  if ! "$DOTNET" build "$PROJECT" -c Release -o "$BUILD_DIR" --nologo -v minimal; then
+    echo "Erreur : la compilation a échoué (voir les messages ci-dessus)." >&2
+    exit 1
+  fi
+fi
+
 if [ ! -f "$BIN" ]; then
-  echo "Erreur : compilation terminée sans binaire ($BIN)." >&2
+  echo "Erreur : binaire introuvable ($BIN). Relancez sans --no-build." >&2
   exit 1
 fi
 
 echo "Lancement de 321 Back Office ..."
-exec "$DOTNET" "$BIN" "$@"
+exec "$DOTNET" "$BIN" ${ARGS[@]+"${ARGS[@]}"}

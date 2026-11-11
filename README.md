@@ -28,6 +28,7 @@ Sous Linux, Avalonia a besoin des bibliothèques natives habituelles (`libx11`, 
 ```bash
 ./run.sh                          # exemple par défaut (data/exemple-business-externe.json)
 ./run.sh chemin/business.json     # un autre business
+./run.sh --no-build               # relance l'interface sans recompiler
 ```
 
 ```bat
@@ -61,7 +62,7 @@ dotnet/BackOffice.csproj     projet .NET (C# 12, net8.0) + paquets Avalonia
 dotnet/Program.cs            point d'entrée + modes --dump / --publish
 dotnet/App.axaml(.cs)        application Avalonia (thème sombre)
 dotnet/src/Model/            BusinessProfile, Product, Validation
-dotnet/src/Io/               BusinessStore (JSON), ImageLoader (chemins + base64)
+dotnet/src/Io/               BusinessStore (JSON), ImageLoader (chemins + base64), EnvFile (.env)
 dotnet/src/Mqtt/             MqttPublisher (MQTT 3.1.1 QoS 0)
 dotnet/src/Cli/              CliCommands (--dump / --publish)
 dotnet/src/Ui/               MainWindow (XAML + code), Dialogues, lignes de liste
@@ -125,6 +126,8 @@ L'heure affichée ne vient **pas** du JSON du business : elle est lue dans un fi
 - L'interface l'affiche en heure locale `HH:mm` dans la barre du haut, avec le timestamp brut, et **relit le fichier chaque minute**.
 - Le back-office ne modifie jamais ce fichier : c'est la source d'heure, pas une donnée du commerce.
 - S'il est absent ou invalide, l'heure du PC est affichée (un avertissement le signale au chargement).
+
+Si `BACKOFFICE_MQTT_TIME_TOPIC` est configuré, l'application s'abonne à ce topic : **chaque message reçu met immédiatement l'heure à jour** et devient prioritaire sur `time.json`. L'heure continue ensuite d'avancer à partir du dernier timestamp reçu. La barre affiche alors `Heure : HH:mm (MQTT)`.
 - Un `time.json` placé à côté du business ouvert est prioritaire sur celui de `data/`.
 
 Les chemins d'images sont **relatifs au fichier JSON** : un dossier `data/` + `assets/` reste donc portable d'une machine à l'autre. Si un chemin n'existe pas à côté du JSON, la version C# cherche le même chemin dans le dossier parent (ce qui fait fonctionner tel quel `data/business.json` pointant sur `assets/` à la racine du dépôt).
@@ -165,8 +168,29 @@ Le back-office publie le business sérialisé (JSON compact) sur un topic, en MQ
 | ------------------------ | ------------------------------- | -------------------------- |
 | `BACKOFFICE_MQTT_URL` | `mqtt://192.168.1.10:1883` | broker |
 | `BACKOFFICE_MQTT_HOST` / `BACKOFFICE_MQTT_PORT` | `localhost` / `1883` | alternative à l'URL |
-| `BACKOFFICE_MQTT_TOPIC` | `321/business/COM-0112` | **requis** pour activer MQTT |
+| `BACKOFFICE_MQTT_TOPIC` | `umddcmid3b/business` | topic de publication (**requis** pour le bouton) |
+| `BACKOFFICE_MQTT_USERNAME` / `BACKOFFICE_MQTT_PASSWORD` | `ict` / `…` | identifiants du broker |
+| `BACKOFFICE_MQTT_TIME_TOPIC` | `umddcmid3b/dg/time` | topic d'heure, abonnement automatique |
 | `BACKOFFICE_MQTT_CLIENT_ID` | `backoffice-dj-dams` | optionnel |
+
+### Fichier `.env`
+
+Au démarrage, l'application charge le premier `.env` trouvé (`BACKOFFICE_ENV_FILE`, sinon en remontant depuis le binaire ou le dossier courant). Les variables déjà présentes dans l'environnement gardent la priorité. `.env` est ignoré par Git (mot de passe) ; `.env.example` sert de modèle.
+
+```ini
+BACKOFFICE_MQTT_HOST=mqqt.blue.section-inf.ch
+BACKOFFICE_MQTT_PORT=1883
+BACKOFFICE_MQTT_USERNAME=ict
+BACKOFFICE_MQTT_PASSWORD=…
+BACKOFFICE_MQTT_TIME_TOPIC=umddcmid3b/dg/time
+BACKOFFICE_MQTT_TOPIC=umddcmid3b/business
+```
+
+Abonnement à l'heure, sans interface :
+
+```bash
+mosquitto_sub -h mqqt.blue.section-inf.ch -u ict -P … -t umddcmid3b/dg/time -v
+```
 
 Test en ligne de commande :
 
