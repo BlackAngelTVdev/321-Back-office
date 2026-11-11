@@ -123,11 +123,11 @@ L'heure affichée ne vient **pas** du JSON du business : elle est lue dans un fi
 { "UnixTimeStamp": 1794399763 }
 ```
 
-- L'interface l'affiche en heure locale `HH:mm` dans la barre du haut, avec le timestamp brut, et **relit le fichier chaque minute**.
+- L'interface l'affiche en heure locale `HH:mm:ss` dans la barre du haut, avec le timestamp brut, et **relit le fichier chaque seconde**.
 - Le back-office ne modifie jamais ce fichier : c'est la source d'heure, pas une donnée du commerce.
 - S'il est absent ou invalide, l'heure du PC est affichée (un avertissement le signale au chargement).
 
-Si `BACKOFFICE_MQTT_TIME_TOPIC` est configuré, l'application s'abonne à ce topic : **chaque message reçu met immédiatement l'heure à jour** et devient prioritaire sur `time.json`. L'heure continue ensuite d'avancer à partir du dernier timestamp reçu. La barre affiche alors `Heure : HH:mm (MQTT)`.
+Si `BACKOFFICE_MQTT_TIME_TOPIC` est configuré, l'application s'abonne à ce topic : **chaque message reçu met immédiatement l'heure à jour** et devient prioritaire sur `time.json`. L'heure continue ensuite d'avancer à partir du dernier timestamp reçu. La barre affiche alors `Heure : HH:mm:ss (MQTT)`.
 - Un `time.json` placé à côté du business ouvert est prioritaire sur celui de `data/`.
 
 Les chemins d'images sont **relatifs au fichier JSON** : un dossier `data/` + `assets/` reste donc portable d'une machine à l'autre. Si un chemin n'existe pas à côté du JSON, la version C# cherche le même chemin dans le dossier parent (ce qui fait fonctionner tel quel `data/business.json` pointant sur `assets/` à la racine du dépôt).

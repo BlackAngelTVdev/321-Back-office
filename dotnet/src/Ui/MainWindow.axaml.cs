@@ -345,14 +345,14 @@ public partial class MainWindow : Window
     private void OnMqttStatus(string message)
         => Dispatcher.UIThread.Post(() => ShowStatus(message, 6000));
 
-    /// <summary>Programme le prochain rafraîchissement sur la minute pleine suivante.</summary>
+    /// <summary>Programme le prochain rafraîchissement sur la seconde pleine suivante.</summary>
     private void ScheduleClockTick()
     {
         var now = DateTime.Now;
-        var nextMinute = new DateTime(
-            now.Year, now.Month, now.Day, now.Hour, now.Minute, 0).AddMinutes(1);
+        var nextSecond = new DateTime(
+            now.Year, now.Month, now.Day, now.Hour, now.Minute, now.Second).AddSeconds(1);
 
-        _clockTimer.Interval = nextMinute - now + TimeSpan.FromMilliseconds(50);
+        _clockTimer.Interval = nextSecond - now + TimeSpan.FromMilliseconds(20);
         _clockTimer.Start();
     }
 

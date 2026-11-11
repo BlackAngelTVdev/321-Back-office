@@ -24,11 +24,11 @@ public static class Validation
     public static bool IsValidUnixTime(long unixTimeStamp)
         => unixTimeStamp >= 0 && unixTimeStamp <= MaxUnixTimeStamp;
 
-    /// <summary>Secondes Unix -> heure locale « HH:mm » (« — » si invalide).</summary>
+    /// <summary>Secondes Unix -> heure locale « HH:mm:ss » (« — » si invalide).</summary>
     public static string FormatUnixTime(long unixTimeStamp)
         => IsValidUnixTime(unixTimeStamp)
             ? DateTimeOffset.FromUnixTimeSeconds(unixTimeStamp).ToLocalTime()
-                .ToString("HH:mm", CultureInfo.InvariantCulture)
+                .ToString("HH:mm:ss", CultureInfo.InvariantCulture)
             : "—";
 
     /// <summary>2450 -> "24.50 CHF"</summary>
