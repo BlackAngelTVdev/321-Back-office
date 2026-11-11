@@ -21,7 +21,6 @@ public sealed class LoadResult
 ///   "ID": "COM-7777",
 ///   "Name": "Aux Mille Miettes",
 ///   "Logo": "data:image/webp;base64,...",
-///   "Time": "09:30",
 ///   "Special": { "ID": "PROD-7777", "Name": "Millefeuille", "Picture": "...", "Price": 3.5 },
 ///   "Products": [ ... ]   // uniquement s'il y a d'autres produits
 /// }
@@ -53,8 +52,6 @@ public static class BusinessStore
             ["ID"] = business.Id,
             ["Name"] = business.Name,
             ["Logo"] = ImageReference(business.Logo, baseDir, embedImages),
-            // Heure importée, sinon heure du PC au moment de l'écriture.
-            ["Time"] = Validation.NormalizeTime(business.Time) ?? Validation.CurrentTime(),
         };
 
         var special = business.FindProduct(business.SpecialProductId);
@@ -132,17 +129,6 @@ public static class BusinessStore
                 Name = ReadString(root, "Name", "name").Trim(),
                 Logo = ReadString(root, "Logo", "logo"),
             };
-
-            // Heure : valeur importée (HH:mm) ; sinon heure du PC.
-            var importedTime = ReadString(root, "Time", "time", "Hour", "hour").Trim();
-            var normalizedTime = Validation.NormalizeTime(importedTime);
-            business.Time = normalizedTime ?? Validation.CurrentTime();
-
-            if (importedTime.Length > 0 && normalizedTime is null)
-            {
-                result.Warnings.Add(
-                    $"Heure invalide « {importedTime} » (format attendu HH:mm) : heure du PC utilisée ({business.Time}).");
-            }
 
             if (!Validation.IsValidBusinessId(business.Id))
             {

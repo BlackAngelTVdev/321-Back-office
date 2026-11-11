@@ -26,7 +26,7 @@ Sous Linux, Avalonia a besoin des bibliothèques natives habituelles (`libx11`, 
 ## Lancer
 
 ```bash
-./run.sh                          # business par défaut (data/business.json)
+./run.sh                          # exemple par défaut (data/exemple-business-externe.json)
 ./run.sh chemin/business.json     # un autre business
 ```
 
@@ -47,7 +47,7 @@ dotnet dotnet/build/BackOffice.dll [business.json]
 
 | Commande | Effet |
 | ------------------------------------ | --------------------------------------------------- |
-| `BackOffice` | interface avec le business par défaut |
+| `BackOffice` | interface avec l'exemple par défaut (`data/exemple-business-externe.json`) |
 | `BackOffice chemin/business.json` | interface avec un autre business |
 | `BackOffice --dump fichier.json` | valide et affiche le JSON normalisé (code 1 si invalide) |
 | `BackOffice --publish fichier.json` | publie le business sur le broker MQTT configuré |
@@ -65,7 +65,7 @@ dotnet/src/Io/               BusinessStore (JSON), ImageLoader (chemins + base64
 dotnet/src/Mqtt/             MqttPublisher (MQTT 3.1.1 QoS 0)
 dotnet/src/Cli/              CliCommands (--dump / --publish)
 dotnet/src/Ui/               MainWindow (XAML + code), Dialogues, lignes de liste
-data/                        business.json (COM-0112) + exemple-business-externe.json
+data/                        business.json (COM-0112) + exemple-business-externe.json + time.json (heure)
 assets/                      logos 16:9 et images produits carrées
 run.sh / run.cmd             build + lancement
 ```
@@ -79,7 +79,6 @@ run.sh / run.cmd             build + lancement
 | `ID` | string | **obligatoire**, `^COM-[0-9]{4}$`, identifie le commerce sans ambiguïté |
 | `Name` | string | **obligatoire**, nom public du commerce |
 | `Logo` | image 16:9 | **obligatoire**, chemin relatif au JSON ou data URI base64 |
-| `Time` | heure | `HH:mm` ; si absente (ou invalide), l'heure du PC est utilisée |
 | `Special` | produit | **obligatoire**, produit phare (objet complet), doit faire partie des produits |
 
 ### Produit
@@ -100,7 +99,6 @@ Le prix est stocké en centimes dans le code (pour éviter les erreurs d'arrondi
     "ID": "COM-7777",
     "Name": "Aux Mille Miettes",
     "Logo": "data:image/webp;base64,UklGR...",
-    "Time": "09:30",
     "Special": {
         "ID": "PROD-7777",
         "Name": "Millefeuille",
@@ -113,27 +111,42 @@ Le prix est stocké en centimes dans le code (pour éviter les erreurs d'arrondi
 - `Logo` et `Picture` acceptent un chemin relatif au JSON ou un data URI base64 ; l'enregistrement et l'export embarquent toujours les images en data URI base64.
 - `Special` est le **produit phare complet** (objet), pas seulement son ID.
 - `Products` n'est écrit **que s'il existe d'autres produits** que le produit phare, pour ne jamais perdre la liste du back-office.
-- `Time` est l'heure du commerce, au format `HH:mm`. Si elle est absente (ou invalide), l'heure du PC est utilisée et écrite à la sauvegarde ; le bouton « Heure du PC » la remplit à tout moment.
+- L'heure ne fait **pas** partie du business : elle est lue dans `data/time.json` (voir ci-dessous) et n'est jamais écrite dans le fichier du commerce.
 - La lecture reste tolérante : clés `ID`/`id`, `Special` objet ou simple ID, `Price` en francs ou `priceCents` en centimes.
+
+### Heure (`data/time.json`)
+
+L'heure affichée ne vient **pas** du JSON du business : elle est lue dans un fichier séparé, `data/time.json` (ou le chemin de `BACKOFFICE_TIME_FILE`), au format :
+
+```json
+{ "UnixTimeStamp": 1794399763 }
+```
+
+- L'interface l'affiche en heure locale `HH:mm` dans la barre du haut, avec le timestamp brut, et **relit le fichier chaque minute**.
+- Le back-office ne modifie jamais ce fichier : c'est la source d'heure, pas une donnée du commerce.
+- S'il est absent ou invalide, l'heure du PC est affichée (un avertissement le signale au chargement).
+- Un `time.json` placé à côté du business ouvert est prioritaire sur celui de `data/`.
 
 Les chemins d'images sont **relatifs au fichier JSON** : un dossier `data/` + `assets/` reste donc portable d'une machine à l'autre. Si un chemin n'existe pas à côté du JSON, la version C# cherche le même chemin dans le dossier parent (ce qui fait fonctionner tel quel `data/business.json` pointant sur `assets/` à la racine du dépôt).
 
 ## Fonctionnalités
 
-- **Afficher son business** : logo 16:9, nom, ID, produit phare (image carrée, nom, prix) et liste des produits.
+- **Afficher son business** : logo 16:9, nom, ID, produit phare (image carrée, nom, prix), liste des produits et l'heure lue dans `data/time.json`.
 - **Éditer** : nom, ID, logo, produit phare, ajout / modification / suppression de produits.
-- **Enregistrer** (`Ctrl+S`) dans `data/business.json`, puis **relire au démarrage**.
+- **Enregistrer** (`Ctrl+S`) dans le fichier ouvert, puis **relire au démarrage** (l'exemple `data/exemple-business-externe.json` est chargé par défaut).
 - **Afficher un autre BP** : bouton *Ouvrir un business…* ou argument en ligne de commande. Un exemple est fourni : `data/exemple-business-externe.json` (COM-0042, « Le Mille-Miettes »).
 - **Exporter en un fichier** : les images sont intégrées en base64, ce qui donne **un seul `.json`** à envoyer par Discord.
 - **Publier en MQTT** : bouton *Publier (MQTT)* ou mode CLI.
 - Validation systématique : ID hors format, ID produit en double, produit phare inexistant, prix négatif, images manquantes (avertissement, pas blocage).
 
-Le business livré par défaut est `data/business.json` : **COM-0112 « DJ Dam's »**, produit phare **PROD-1109 « eclair au chocolat »**.
+Au démarrage, l'interface charge `data/exemple-business-externe.json` : **COM-0042 « Le Mille-Miettes »**, produit phare **PROD-0104 « Tarte aux myrtilles »**, l'heure venant de `data/time.json`. Le bouton *Mes données* ouvre `data/business.json` : **COM-0112 « DJ Dam's »**, produit phare **PROD-1109 « eclair au chocolat »**.
 
 ## Persistance
 
-- Fichier par défaut : `data/business.json`, retrouvé en remontant depuis le binaire jusqu'à la racine du dépôt.
-- Surcharge : variable `BACKOFFICE_DATA_FILE=/chemin/vers/business.json`.
+- Fichier affiché au démarrage : `data/exemple-business-externe.json`, retrouvé en remontant depuis le binaire jusqu'à la racine du dépôt.
+- Bouton *Mes données* : `data/business.json`.
+- Surcharge : variable `BACKOFFICE_DATA_FILE=/chemin/vers/business.json` (utilisée au démarrage et par *Mes données*).
+- Heure : `data/time.json`, relu chaque minute et jamais réécrit ; surcharge `BACKOFFICE_TIME_FILE=/chemin/vers/time.json`.
 - Écriture atomique (fichier temporaire puis renommage) : en cas d'arrêt brutal, l'ancien fichier reste intact.
 
 ## Échanger un business (Discord)

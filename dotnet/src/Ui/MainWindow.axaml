@@ -22,6 +22,15 @@
         <Button x:Name="SaveButton" Content="Enregistrer (Ctrl+S)" />
         <Button x:Name="ExportButton" Content="Exporter en un fichier…" />
         <Button x:Name="PublishButton" Content="Publier (MQTT)" />
+
+        <Border Width="1" Height="22" Background="#232A36" Margin="8,0" />
+        <StackPanel VerticalAlignment="Center" Spacing="1">
+          <TextBlock x:Name="TimeLabel" Text="Heure : —" FontWeight="SemiBold" />
+          <TextBlock x:Name="TimeStampLabel"
+                     Text="UnixTimeStamp : —"
+                     FontSize="11"
+                     Foreground="#8B95A5" />
+        </StackPanel>
       </StackPanel>
     </Border>
 
@@ -89,7 +98,7 @@
                 Padding="16">
           <StackPanel Spacing="10">
             <TextBlock Text="Fiche du commerce" FontWeight="SemiBold" />
-            <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="8">
+            <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="8">
 
               <TextBlock Grid.Row="0" Grid.Column="0" Text="ID (COM-XXXX)"
                          Foreground="#8B95A5" VerticalAlignment="Center" />
@@ -106,16 +115,9 @@
                 <Button x:Name="BrowseLogoButton" Grid.Column="1" Content="Parcourir…" />
               </Grid>
 
-              <TextBlock Grid.Row="3" Grid.Column="0" Text="Heure (HH:mm)"
+              <TextBlock Grid.Row="3" Grid.Column="0" Text="Produit phare"
                          Foreground="#8B95A5" VerticalAlignment="Center" />
-              <Grid Grid.Row="3" Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                <TextBox x:Name="TimeBox" Grid.Column="0" Watermark="09:30" />
-                <Button x:Name="NowButton" Grid.Column="1" Content="Heure du PC" />
-              </Grid>
-
-              <TextBlock Grid.Row="4" Grid.Column="0" Text="Produit phare"
-                         Foreground="#8B95A5" VerticalAlignment="Center" />
-              <ComboBox x:Name="SpecialCombo" Grid.Row="4" Grid.Column="1"
+              <ComboBox x:Name="SpecialCombo" Grid.Row="3" Grid.Column="1"
                         HorizontalAlignment="Stretch" />
 
             </Grid>

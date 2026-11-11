@@ -7,7 +7,6 @@ public static class Validation
 {
     private static readonly Regex BusinessIdPattern = new("^COM-[0-9]{4}$", RegexOptions.Compiled);
     private static readonly Regex ProductIdPattern = new("^PROD-[0-9]{4}$", RegexOptions.Compiled);
-    private static readonly Regex TimePattern = new("^([0-9]{1,2})[:hH.]([0-9]{2})(?:[:.][0-9]{2})?$", RegexOptions.Compiled);
 
     /// <summary>^COM-[0-9]{4}$</summary>
     public static bool IsValidBusinessId(string? id) => id is not null && BusinessIdPattern.IsMatch(id);
@@ -15,34 +14,22 @@ public static class Validation
     /// <summary>^PROD-[0-9]{4}$</summary>
     public static bool IsValidProductId(string? id) => id is not null && ProductIdPattern.IsMatch(id);
 
-    /// <summary>Heure du PC au format HH:mm (utilisée quand aucune heure n'est importée).</summary>
-    public static string CurrentTime()
-        => DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture);
+    /// <summary>Plus grand timestamp accepté : 9999-12-31T23:59:59Z.</summary>
+    private const long MaxUnixTimeStamp = 253402300799;
 
-    /// <summary>Accepte 9:05, 09:05, 09h05, 09:05:00 et renvoie "09:05" (null si invalide).</summary>
-    public static string? NormalizeTime(string? time)
-    {
-        if (string.IsNullOrWhiteSpace(time))
-        {
-            return null;
-        }
+    /// <summary>Horodatage Unix courant (secondes), utilisé quand aucune heure n'est importée.</summary>
+    public static long CurrentUnixTime() => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
-        var match = TimePattern.Match(time.Trim());
-        if (!match.Success)
-        {
-            return null;
-        }
+    /// <summary>Vrai si le timestamp correspond à une date représentable.</summary>
+    public static bool IsValidUnixTime(long unixTimeStamp)
+        => unixTimeStamp >= 0 && unixTimeStamp <= MaxUnixTimeStamp;
 
-        var hours = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
-        var minutes = int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture);
-
-        return hours <= 23 && minutes <= 59
-            ? $"{hours:D2}:{minutes:D2}"
-            : null;
-    }
-
-    /// <summary>Heure valide au format HH:mm.</summary>
-    public static bool IsValidTime(string? time) => NormalizeTime(time) is not null;
+    /// <summary>Secondes Unix -> heure locale « HH:mm » (« — » si invalide).</summary>
+    public static string FormatUnixTime(long unixTimeStamp)
+        => IsValidUnixTime(unixTimeStamp)
+            ? DateTimeOffset.FromUnixTimeSeconds(unixTimeStamp).ToLocalTime()
+                .ToString("HH:mm", CultureInfo.InvariantCulture)
+            : "—";
 
     /// <summary>2450 -> "24.50 CHF"</summary>
     public static string FormatPrice(int priceCents)

@@ -12,6 +12,7 @@ namespace BackOffice.Ui;
 public partial class MainWindow : Window
 {
     private readonly DispatcherTimer _statusTimer = new();
+    private readonly DispatcherTimer _clockTimer = new();
     private readonly List<ProductRow> _productRows = new();
 
     private BusinessProfile _business = new();
@@ -36,7 +37,9 @@ public partial class MainWindow : Window
         WireEvents();
 
         _statusTimer.Tick += OnStatusTimerTick;
-        _business.Time = Validation.CurrentTime();
+        _clockTimer.Tick += OnClockTick;
+        RefreshTimeLabel();
+        ScheduleClockTick();
 
         PublishButton.IsEnabled = MqttPublisher.ConfigFromEnvironment() is not null;
         ToolTip.SetTip(
@@ -48,8 +51,16 @@ public partial class MainWindow : Window
         RefreshSpecialCombo();
     }
 
-    /// <summary>Fichier de données par défaut (surchargé par BACKOFFICE_DATA_FILE).</summary>
+    /// <summary>Fichier affiché au démarrage : l'exemple livré (heure lue dans data/time.json).</summary>
     public static string DefaultDataFile()
+        => DataFile("exemple-business-externe.json");
+
+    /// <summary>Fichier des données personnelles (bouton « Mes données »).</summary>
+    public static string OwnDataFile()
+        => DataFile("business.json");
+
+    /// <summary>Chemin d'un fichier de data/ (surchargé par BACKOFFICE_DATA_FILE).</summary>
+    private static string DataFile(string fileName)
     {
         var fromEnvironment = Environment.GetEnvironmentVariable("BACKOFFICE_DATA_FILE");
         if (!string.IsNullOrWhiteSpace(fromEnvironment))
@@ -59,23 +70,23 @@ public partial class MainWindow : Window
 
         foreach (var start in new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() })
         {
-            var found = FindDataFile(start);
+            var found = FindDataFile(start, fileName);
             if (found is not null)
             {
                 return found;
             }
         }
 
-        return Path.Combine(AppContext.BaseDirectory, "data", "business.json");
+        return Path.Combine(AppContext.BaseDirectory, "data", fileName);
     }
 
-    private static string? FindDataFile(string startDirectory)
+    private static string? FindDataFile(string startDirectory, string fileName)
     {
         var directory = new DirectoryInfo(startDirectory);
 
         for (var depth = 0; depth < 8 && directory is not null; depth++, directory = directory.Parent)
         {
-            var candidate = Path.Combine(directory.FullName, "data", "business.json");
+            var candidate = Path.Combine(directory.FullName, "data", fileName);
             if (File.Exists(candidate))
             {
                 return candidate;
@@ -92,10 +103,7 @@ public partial class MainWindow : Window
         var file = _pendingFile;
         _pendingFile = null;
 
-        if (!string.IsNullOrWhiteSpace(file))
-        {
-            await OpenBusinessAsync(file);
-        }
+        await OpenBusinessAsync(string.IsNullOrWhiteSpace(file) ? DefaultDataFile() : file);
     }
 
     protected override async void OnKeyDown(KeyEventArgs e)
@@ -111,6 +119,7 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _clockTimer.Stop();
         _logoBitmap?.Dispose();
         _specialBitmap?.Dispose();
         DisposeRows();
@@ -120,7 +129,7 @@ public partial class MainWindow : Window
     private void WireEvents()
     {
         OpenButton.Click += async (_, _) => await OpenFileDialogAsync();
-        MineButton.Click += async (_, _) => await OpenBusinessAsync(DefaultDataFile());
+        MineButton.Click += async (_, _) => await OpenBusinessAsync(OwnDataFile());
         SaveButton.Click += async (_, _) => await SaveCurrentAsync();
         ExportButton.Click += async (_, _) => await ExportSingleFileAsync();
         PublishButton.Click += async (_, _) => await PublishCurrentAsync();
@@ -131,8 +140,6 @@ public partial class MainWindow : Window
         NameBox.LostFocus += (_, _) => ApplyNameEdit();
         IdBox.LostFocus += (_, _) => ApplyIdEdit();
         LogoBox.LostFocus += (_, _) => ApplyLogoEdit();
-        TimeBox.LostFocus += (_, _) => ApplyTimeEdit();
-        NowButton.Click += (_, _) => UseComputerTime();
         SpecialCombo.SelectionChanged += (_, _) => ApplySpecial();
 
         ProductList.SelectionChanged += (_, _) => SelectProduct(ProductList.SelectedIndex);
@@ -149,7 +156,7 @@ public partial class MainWindow : Window
         IdBox.Text = _business.Id;
         NameBox.Text = _business.Name;
         LogoBox.Text = _business.Logo;
-        TimeBox.Text = _business.Time;
+        RefreshTimeLabel();
 
         RefreshSpecialCombo();
         RefreshProducts();
@@ -282,28 +289,30 @@ public partial class MainWindow : Window
         RefreshHeader();
     }
 
-    private void ApplyTimeEdit()
+    /// <summary>Heure lue dans time.json (relue à chaque tick), sinon heure du PC.</summary>
+    private void RefreshTimeLabel()
     {
-        var normalized = Validation.NormalizeTime(TimeBox.Text);
-        if (normalized is null)
-        {
-            TimeBox.Text = _business.Time;
-            _ = Dialogs.ShowWarningAsync(
-                this,
-                "Heure invalide",
-                "L'heure doit respecter le format HH:mm (exemple : 09:30).");
-            return;
-        }
-
-        _business.Time = normalized;
-        TimeBox.Text = normalized;
+        var unixTimeStamp = TimeStore.Resolve(_filePath);
+        TimeLabel.Text = $"Heure : {Validation.FormatUnixTime(unixTimeStamp)}";
+        TimeStampLabel.Text = $"UnixTimeStamp : {unixTimeStamp}";
     }
 
-    private void UseComputerTime()
+    /// <summary>Programme le prochain rafraîchissement sur la minute pleine suivante.</summary>
+    private void ScheduleClockTick()
     {
-        _business.Time = Validation.CurrentTime();
-        TimeBox.Text = _business.Time;
-        ShowStatus($"Heure du PC : {_business.Time}");
+        var now = DateTime.Now;
+        var nextMinute = new DateTime(
+            now.Year, now.Month, now.Day, now.Hour, now.Minute, 0).AddMinutes(1);
+
+        _clockTimer.Interval = nextMinute - now + TimeSpan.FromMilliseconds(50);
+        _clockTimer.Start();
+    }
+
+    private void OnClockTick(object? sender, EventArgs e)
+    {
+        _clockTimer.Stop();
+        RefreshTimeLabel();
+        ScheduleClockTick();
     }
 
     private void ApplySpecial()
@@ -488,7 +497,12 @@ public partial class MainWindow : Window
         _business = result.Business;
         _filePath = filePath;
         _baseDir = BusinessStore.DirectoryOf(filePath);
-        _warnings = result.Warnings;
+        _warnings = new List<string>(result.Warnings);
+
+        if (TimeStore.Read(_filePath) is null)
+        {
+            _warnings.Add($"Heure introuvable ou invalide ({TimeStore.FileName}) : heure du PC affichée.");
+        }
 
         ApplyBusinessToUi();
 
@@ -650,11 +664,6 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(_business.Name))
         {
             problems.Add("Le nom du commerce est vide.");
-        }
-
-        if (!Validation.IsValidTime(_business.Time))
-        {
-            problems.Add("L'heure du commerce est invalide (format attendu HH:mm).");
         }
 
         if (_business.Products.Count == 0)
