@@ -7,5 +7,42 @@
         "Name": "eclair au chocolat",
         "Picture": "/mnt/disque2/dev/321-Back-office/assets/images.jpg",
         "Price": 3
-    }
+    },
+    "Hours": [
+        {
+            "Day": "Lundi",
+            "Open": "23:00",
+            "Close": "06:00"
+        },
+        {
+            "Day": "Mardi",
+            "Open": "23:00",
+            "Close": "06:00"
+        },
+        {
+            "Day": "Mercredi",
+            "Open": "23:00",
+            "Close": "06:00"
+        },
+        {
+            "Day": "Jeudi",
+            "Open": "23:00",
+            "Close": "06:00"
+        },
+        {
+            "Day": "Vendredi",
+            "Open": "23:00",
+            "Close": "06:00"
+        },
+        {
+            "Day": "Samedi",
+            "Open": "23:00",
+            "Close": "06:00"
+        },
+        {
+            "Day": "Dimanche",
+            "Open": "23:00",
+            "Close": "06:00"
+        }
+    ]
 }
