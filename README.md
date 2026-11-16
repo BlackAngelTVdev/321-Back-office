@@ -61,7 +61,7 @@ Avec les scripts : `./run.sh --dump data/business.json`.
 dotnet/BackOffice.csproj     projet .NET (C# 12, net8.0) + paquets Avalonia
 dotnet/Program.cs            point d'entrée + modes --dump / --publish
 dotnet/App.axaml(.cs)        application Avalonia (thème sombre)
-dotnet/src/Model/            BusinessProfile, Product, Validation
+dotnet/src/Model/            BusinessProfile, Product, OpeningHours, Validation
 dotnet/src/Io/               BusinessStore (JSON), ImageLoader (chemins + base64), EnvFile (.env)
 dotnet/src/Mqtt/             MqttPublisher (MQTT 3.1.1 QoS 0)
 dotnet/src/Cli/              CliCommands (--dump / --publish)
@@ -123,29 +123,59 @@ L'heure affichée ne vient **pas** du JSON du business : elle est lue dans un fi
 { "UnixTimeStamp": 1794399763 }
 ```
 
-Le même décodeur tolérant sert aux messages MQTT et à `time.json`. Formes acceptées :
+`time.json` et les messages MQTT n'utilisent pas le même format :
 
-| Forme | Exemple |
-| ----- | ------- |
-| nombre en secondes | `1794399763` |
-| nombre en millisecondes / µs / ns | `1794399763000` (converti automatiquement) |
-| date ISO 8601 | `"2026-11-16T10:42:07Z"` (sans fuseau : heure locale) |
-| objet, n'importe quelle clé reconnue | `{ "timestamp": 1794399763 }`, `{ "time": "2026-11-16T10:42:07Z" }`, `{ "ts": 1794399763 }`, `{ "date": … }`, `{ "value": … }` |
-| échantillon enveloppé | `{ "sample": { "Timestamp": 1794399763 } }` |
-| lot d'échantillons | `[ { "time": … }, { "time": … } ]` (le plus récent l'emporte) |
+| Source | Format |
+| ------ | ------ |
+| `time.json` (classique) | `{ "UnixTimeStamp": 1794399763 }` ou l'heure seule `1794399763` |
+| message MQTT | **enveloppe du contrat UMDD** (`doc/contracts/envelope.schema.json`) |
+
+Exemple de message MQTT, contrat `time` :
+
+```json
+{
+    "v": 1,
+    "id": "3f6c2a9e-8b41-4d7a-9c5e-1a2b3c4d5e6f",
+    "from": "SERV-time",
+    "to": "*",
+    "ts": "2026-11-09T09:56:09Z",
+    "type": "time",
+    "payload": { "timestamp": 1794218169 }
+}
+```
+
+- L'heure affichée est **`payload.timestamp`** (secondes Unix) ; `ts` n'est que l'horodatage d'émission de l'enveloppe et n'est pas utilisé.
+- `v` doit valoir `1` et `type` doit valoir `time` : une enveloppe de log (`type: "log"`) est ignorée.
+- Un ancien message plat (`{ "UnixTimeStamp": … }`, nombre ou chaîne nus) est ignoré.
 
 - L'interface l'affiche en heure locale `HH:mm:ss` dans la barre du haut, avec le timestamp brut, et **relit le fichier chaque seconde**.
 - Le back-office ne modifie jamais ce fichier : c'est la source d'heure, pas une donnée du commerce.
 - S'il est absent ou invalide, l'heure du PC est affichée (un avertissement le signale au chargement).
 
-Si `BACKOFFICE_MQTT_TIME_TOPIC` est configuré, l'application s'abonne à ce topic : **chaque échantillon reçu met immédiatement l'heure à jour** (mêmes formats tolérants que `time.json`) et devient prioritaire sur `time.json`. Un message dont l'horodatage est illisible est simplement ignoré. L'heure continue ensuite d'avancer à partir du dernier timestamp reçu. La barre affiche alors `Heure : HH:mm:ss (MQTT)`.
+Si `BACKOFFICE_MQTT_TIME_TOPIC` est configuré, l'application s'abonne à ce topic : **chaque enveloppe de type `time` reçue met immédiatement l'heure à jour** et devient prioritaire sur `time.json`. Un message plat, d'un autre type ou dont `payload.timestamp` est illisible est simplement ignoré. L'heure continue ensuite d'avancer à partir du dernier timestamp reçu. La barre affiche alors `Heure : HH:mm:ss (MQTT)`.
 - Un `time.json` placé à côté du business ouvert est prioritaire sur celui de `data/`.
 
 Les chemins d'images sont **relatifs au fichier JSON** : un dossier `data/` + `assets/` reste donc portable d'une machine à l'autre. Si un chemin n'existe pas à côté du JSON, la version C# cherche le même chemin dans le dossier parent (ce qui fait fonctionner tel quel `data/business.json` pointant sur `assets/` à la racine du dépôt).
 
+### Horaires d'ouverture
+
+Le business porte ses horaires, éditables directement dans la fiche du commerce. Ils sont enregistrés dans le JSON sous la clé facultative `Hours` :
+
+```json
+"Hours": [
+    { "Day": "Lundi", "Open": "06:30", "Close": "19:00" },
+    { "Day": "Samedi", "Open": "07:00", "Close": "12:00" }
+]
+```
+
+- Heures au format `HH:mm` (heure locale) ; un jour absent ou aux deux champs vides est fermé.
+- La barre du haut affiche un badge `Ouvert jusqu'à HH:mm` ou `Fermé`, calculé sur **l'heure affichée** : le timestamp MQTT quand il est reçu, sinon `time.json`, sinon l'heure du PC.
+- Une plage qui passe minuit (`18:00` → `02:00`) est gérée.
+- Édition : une ligne par jour (lundi → dimanche) dans la fiche du commerce ; laisser les deux champs vides ferme le jour. Une saisie invalide est refusée.
+
 ## Fonctionnalités
 
-- **Afficher son business** : logo 16:9, nom, ID, produit phare (image carrée, nom, prix), liste des produits et l'heure lue dans `data/time.json`.
+- **Afficher son business** : logo 16:9, nom, ID, produit phare (image carrée, nom, prix), liste des produits, horaires d'ouverture et l'heure lue dans `data/time.json`.
 - **Éditer** : nom, ID, logo, produit phare, ajout / modification / suppression de produits.
 - **Enregistrer** (`Ctrl+S`) dans le fichier ouvert, puis **relire au démarrage** (l'exemple `data/exemple-business-externe.json` est chargé par défaut).
 - **Afficher un autre BP** : bouton *Ouvrir un business…* ou argument en ligne de commande. Un exemple est fourni : `data/exemple-business-externe.json` (COM-0042, « Le Mille-Miettes »).

@@ -1,5 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Layout;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -14,6 +16,13 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _statusTimer = new();
     private readonly DispatcherTimer _clockTimer = new();
     private readonly List<ProductRow> _productRows = new();
+    private readonly List<(DayOfWeek Day, TextBox Open, TextBox Close)> _hoursFields = new();
+
+    private static readonly IBrush OpenBrush = new SolidColorBrush(Color.Parse("#7BD88F"));
+    private static readonly IBrush ClosedBrush = new SolidColorBrush(Color.Parse("#E08585"));
+    private static readonly IBrush MutedBrush = new SolidColorBrush(Color.Parse("#8B95A5"));
+    private static readonly IBrush OpenBadgeBrush = new SolidColorBrush(Color.Parse("#16281C"));
+    private static readonly IBrush ClosedBadgeBrush = new SolidColorBrush(Color.Parse("#2A1A1A"));
 
     private BusinessProfile _business = new();
     private string _filePath = string.Empty;
@@ -22,6 +31,7 @@ public partial class MainWindow : Window
     private Bitmap? _logoBitmap;
     private Bitmap? _specialBitmap;
     private bool _suppressSpecialChange;
+    private bool _suppressHoursChange;
     private string? _pendingFile;
     private MqttTimeSubscriber? _timeSubscriber;
     private long? _mqttUnixTime;
@@ -38,6 +48,7 @@ public partial class MainWindow : Window
 
         InitializeComponent();
         WireEvents();
+        BuildHoursEditor();
 
         _statusTimer.Tick += OnStatusTimerTick;
         _clockTimer.Tick += OnClockTick;
@@ -53,6 +64,7 @@ public partial class MainWindow : Window
         RefreshHeader();
         RefreshProducts();
         RefreshSpecialCombo();
+        RefreshHoursEditor();
     }
 
     /// <summary>Fichier affiché au démarrage : l'exemple livré (heure lue dans data/time.json).</summary>
@@ -167,6 +179,7 @@ public partial class MainWindow : Window
         RefreshSpecialCombo();
         RefreshProducts();
         RefreshHeader();
+        RefreshHoursEditor();
         UpdateWindowTitle();
     }
 
@@ -301,19 +314,174 @@ public partial class MainWindow : Window
     /// </summary>
     private void RefreshTimeLabel()
     {
+        var unixTimeStamp = CurrentUnixTime();
+        var fromMqtt = _mqttUnixTime is not null;
+
+        TimeLabel.Text = fromMqtt
+            ? $"Heure : {Validation.FormatUnixTime(unixTimeStamp)} (MQTT)"
+            : $"Heure : {Validation.FormatUnixTime(unixTimeStamp)}";
+        TimeStampLabel.Text = $"UnixTimeStamp : {unixTimeStamp}";
+
+        RefreshOpenStatus(unixTimeStamp);
+    }
+
+    /// <summary>Heure de référence : dernier timestamp MQTT (qui avance), sinon time.json, sinon PC.</summary>
+    private long CurrentUnixTime()
+    {
         if (_mqttUnixTime is long received)
         {
             var elapsed = (long)(DateTime.UtcNow - _mqttReceivedUtc).TotalSeconds;
-            var unixTimeStamp = received + Math.Max(elapsed, 0);
+            return received + Math.Max(elapsed, 0);
+        }
 
-            TimeLabel.Text = $"Heure : {Validation.FormatUnixTime(unixTimeStamp)} (MQTT)";
-            TimeStampLabel.Text = $"UnixTimeStamp : {unixTimeStamp}";
+        return TimeStore.Resolve(_filePath);
+    }
+
+    /// <summary>Badge « Ouvert / Fermé » calculé sur l'heure affichée, donc sur le timestamp.</summary>
+    private void RefreshOpenStatus(long unixTimeStamp)
+    {
+        var moment = DateTimeOffset.FromUnixTimeSeconds(unixTimeStamp).ToLocalTime();
+        var hours = _business.HoursFor(moment.DayOfWeek);
+
+        if (OpeningHours.IsOpen(_business, moment))
+        {
+            OpenStatusLabel.Text = hours is not null
+                && Validation.TryParseTimeOfDay(hours.Close, out var closing)
+                ? $"Ouvert jusqu'à {Validation.FormatTimeOfDay(closing)}"
+                : "Ouvert";
+            OpenStatusLabel.Foreground = OpenBrush;
+            OpenStatusBadge.Background = OpenBadgeBrush;
             return;
         }
 
-        var fromFile = TimeStore.Resolve(_filePath);
-        TimeLabel.Text = $"Heure : {Validation.FormatUnixTime(fromFile)}";
-        TimeStampLabel.Text = $"UnixTimeStamp : {fromFile}";
+        if (hours is not null
+            && Validation.TryParseTimeOfDay(hours.Open, out var opening)
+            && moment.TimeOfDay < opening)
+        {
+            OpenStatusLabel.Text = $"Fermé — ouvre à {Validation.FormatTimeOfDay(opening)}";
+        }
+        else
+        {
+            OpenStatusLabel.Text = hours is not null && !hours.IsClosed ? "Fermé" : "Fermé aujourd'hui";
+        }
+
+        OpenStatusLabel.Foreground = ClosedBrush;
+        OpenStatusBadge.Background = ClosedBadgeBrush;
+    }
+
+    /// <summary>Sept lignes « jour / ouverture / fermeture » dans la fiche du commerce.</summary>
+    private void BuildHoursEditor()
+    {
+        _hoursFields.Clear();
+        HoursGrid.Children.Clear();
+        HoursGrid.RowDefinitions.Clear();
+
+        for (var row = 0; row < OpeningHours.WeekOrder.Length; row++)
+        {
+            var day = OpeningHours.WeekOrder[row];
+            HoursGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var label = new TextBlock
+            {
+                Text = OpeningHours.ShortDayName(day),
+                Foreground = MutedBrush,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            var open = new TextBox { Watermark = "06:30", FontSize = 12 };
+            var dash = new TextBlock
+            {
+                Text = "–",
+                Foreground = MutedBrush,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            var close = new TextBox { Watermark = "19:00", FontSize = 12 };
+
+            open.LostFocus += (_, _) => ApplyHoursEdit();
+            close.LostFocus += (_, _) => ApplyHoursEdit();
+
+            Grid.SetRow(label, row);
+            Grid.SetColumn(label, 0);
+            Grid.SetRow(open, row);
+            Grid.SetColumn(open, 1);
+            Grid.SetRow(dash, row);
+            Grid.SetColumn(dash, 2);
+            Grid.SetRow(close, row);
+            Grid.SetColumn(close, 3);
+
+            HoursGrid.Children.Add(label);
+            HoursGrid.Children.Add(open);
+            HoursGrid.Children.Add(dash);
+            HoursGrid.Children.Add(close);
+
+            _hoursFields.Add((day, open, close));
+        }
+    }
+
+    private void RefreshHoursEditor()
+    {
+        _suppressHoursChange = true;
+        try
+        {
+            foreach (var field in _hoursFields)
+            {
+                var hours = _business.HoursFor(field.Day);
+                field.Open.Text = hours?.Open ?? string.Empty;
+                field.Close.Text = hours?.Close ?? string.Empty;
+            }
+        }
+        finally
+        {
+            _suppressHoursChange = false;
+        }
+    }
+
+    /// <summary>Lit les sept lignes ; vide des deux côtés = fermé, format invalide = retour arrière.</summary>
+    private void ApplyHoursEdit()
+    {
+        if (_suppressHoursChange)
+        {
+            return;
+        }
+
+        var next = new List<OpeningHours>();
+        foreach (var field in _hoursFields)
+        {
+            var openText = (field.Open.Text ?? string.Empty).Trim();
+            var closeText = (field.Close.Text ?? string.Empty).Trim();
+
+            if (openText.Length == 0 && closeText.Length == 0)
+            {
+                next.Add(new OpeningHours { Day = field.Day });
+                continue;
+            }
+
+            if (!Validation.TryParseTimeOfDay(openText, out var open)
+                || !Validation.TryParseTimeOfDay(closeText, out var close))
+            {
+                RefreshHoursEditor();
+                _ = Dialogs.ShowWarningAsync(
+                    this,
+                    "Horaire invalide",
+                    $"{OpeningHours.DayName(field.Day)} : indiquez deux heures au format HH:mm "
+                    + "(ou laissez vide pour fermer ce jour).");
+                return;
+            }
+
+            next.Add(new OpeningHours
+            {
+                Day = field.Day,
+                Open = Validation.FormatTimeOfDay(open),
+                Close = Validation.FormatTimeOfDay(close),
+            });
+        }
+
+        _business.Hours.Clear();
+        _business.Hours.AddRange(next);
+
+        RefreshHoursEditor();
+        RefreshOpenStatus(CurrentUnixTime());
+        ShowStatus("Horaires mis à jour.", 3000);
     }
 
     /// <summary>Abonnement au topic d'heure (BACKOFFICE_MQTT_TIME_TOPIC) : chaque message met l'horloge à jour.</summary>
@@ -740,6 +908,16 @@ public partial class MainWindow : Window
         if (_business.IndexOfProduct(_business.SpecialProductId) < 0)
         {
             problems.Add("Le produit phare doit référencer un produit existant.");
+        }
+
+        foreach (var hours in _business.Hours)
+        {
+            if (!hours.IsClosed
+                && (!Validation.TryParseTimeOfDay(hours.Open, out _)
+                    || !Validation.TryParseTimeOfDay(hours.Close, out _)))
+            {
+                problems.Add($"Horaires de {OpeningHours.DayName(hours.Day)} invalides (format HH:mm).");
+            }
         }
 
         return problems;

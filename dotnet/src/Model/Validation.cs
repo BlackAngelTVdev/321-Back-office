@@ -31,6 +31,24 @@ public static class Validation
                 .ToString("HH:mm:ss", CultureInfo.InvariantCulture)
             : "—";
 
+    /// <summary>« 7:30 » ou « 07:30 » -> heure de la journée ; false si le format est invalide.</summary>
+    public static bool TryParseTimeOfDay(string? text, out TimeSpan time)
+    {
+        time = default;
+        return !string.IsNullOrWhiteSpace(text)
+            && TimeSpan.TryParseExact(
+                text.Trim(),
+                new[] { @"h\:mm", @"hh\:mm" },
+                CultureInfo.InvariantCulture,
+                out time)
+            && time >= TimeSpan.Zero
+            && time < TimeSpan.FromDays(1);
+    }
+
+    /// <summary>TimeSpan -> « HH:mm ».</summary>
+    public static string FormatTimeOfDay(TimeSpan time)
+        => $"{time.Hours:D2}:{time.Minutes:D2}";
+
     /// <summary>2450 -> "24.50 CHF"</summary>
     public static string FormatPrice(int priceCents)
         => $"{priceCents / 100}.{Math.Abs(priceCents % 100):D2} CHF";

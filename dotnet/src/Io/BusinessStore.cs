@@ -22,7 +22,8 @@ public sealed class LoadResult
 ///   "Name": "Aux Mille Miettes",
 ///   "Logo": "data:image/webp;base64,...",
 ///   "Special": { "ID": "PROD-7777", "Name": "Millefeuille", "Picture": "...", "Price": 3.5 },
-///   "Products": [ ... ]   // uniquement s'il y a d'autres produits
+///   "Products": [ ... ],  // uniquement s'il y a d'autres produits
+///   "Hours": [ { "Day": "Lundi", "Open": "06:30", "Close": "19:00" } ]   // facultatif
 /// }
 /// </code>
 /// La lecture accepte aussi l'ancien format (schemaVersion, id/name/logo, special = ID, priceCents).
@@ -74,6 +75,29 @@ public static class BusinessStore
             }
 
             root["Products"] = products;
+        }
+
+        // Horaires (facultatif) : seuls les jours ouverts sont écrits.
+        var hours = new JsonArray();
+        foreach (var day in OpeningHours.WeekOrder)
+        {
+            var opening = business.HoursFor(day);
+            if (opening is null || opening.IsClosed)
+            {
+                continue;
+            }
+
+            hours.Add(new JsonObject
+            {
+                ["Day"] = OpeningHours.DayName(day),
+                ["Open"] = opening.Open,
+                ["Close"] = opening.Close,
+            });
+        }
+
+        if (hours.Count > 0)
+        {
+            root["Hours"] = hours;
         }
 
         return root;
@@ -186,6 +210,8 @@ public static class BusinessStore
                 }
             }
 
+            ReadHours(root, business, result);
+
             var seenIds = new HashSet<string>(StringComparer.Ordinal);
             foreach (var product in business.Products)
             {
@@ -246,6 +272,61 @@ public static class BusinessStore
         {
             error = $"Impossible d'écrire dans {filePath} ({exception.Message}).";
             return false;
+        }
+    }
+
+    /// <summary>Lit les horaires (facultatifs) et complète toujours la semaine, jours fermés inclus.</summary>
+    private static void ReadHours(JsonElement root, BusinessProfile business, LoadResult result)
+    {
+        var byDay = new Dictionary<DayOfWeek, OpeningHours>();
+
+        if (TryGetProperty(root, out var hoursElement, "Hours", "hours")
+            && hoursElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in hoursElement.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                var dayText = ReadString(item, "Day", "day");
+                if (!OpeningHours.TryParseDay(dayText, out var day))
+                {
+                    result.Warnings.Add($"Horaire ignoré : jour inconnu « {dayText} ».");
+                    continue;
+                }
+
+                var open = ReadString(item, "Open", "open").Trim();
+                var close = ReadString(item, "Close", "close").Trim();
+
+                if (open.Length == 0 && close.Length == 0)
+                {
+                    byDay[day] = new OpeningHours { Day = day };
+                    continue;
+                }
+
+                if (!Validation.TryParseTimeOfDay(open, out var openTime)
+                    || !Validation.TryParseTimeOfDay(close, out var closeTime))
+                {
+                    result.Warnings.Add(
+                        $"Horaire de {OpeningHours.DayName(day)} ignoré : heures attendues au format HH:mm.");
+                    continue;
+                }
+
+                byDay[day] = new OpeningHours
+                {
+                    Day = day,
+                    Open = Validation.FormatTimeOfDay(openTime),
+                    Close = Validation.FormatTimeOfDay(closeTime),
+                };
+            }
+        }
+
+        business.Hours.Clear();
+        foreach (var day in OpeningHours.WeekOrder)
+        {
+            business.Hours.Add(byDay.TryGetValue(day, out var hours) ? hours : new OpeningHours { Day = day });
         }
     }
 
