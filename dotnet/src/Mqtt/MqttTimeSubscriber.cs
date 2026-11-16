@@ -6,11 +6,13 @@ namespace BackOffice.Mqtt;
 
 /// <summary>
 /// Abonnement MQTT 3.1.1 (QoS 0) à un topic d'heure, par exemple
-/// <c>umddcmid3b/time</c>. Chaque échantillon reçu est décodé par
-/// <see cref="TimeStore.Parse"/>, qui accepte les évolutions de format
-/// (nombre en secondes ou millisecondes, date ISO 8601, objet
-/// <c>{ "UnixTimeStamp": … }</c> ou <c>{ "time": … }</c>, échantillon enveloppé),
-/// puis transmis via <c>onTime</c> en secondes Unix.
+/// <c>umddcmid3b/time</c>. Chaque message suit le contrat d'enveloppe UMDD :
+/// <c>{ "v": 1, "from": "SERV-time", "type": "time",
+/// "payload": { "timestamp": 1794218169 }, … }</c>.
+/// <see cref="TimeStore.ParseSample"/> ne retient que <c>payload.timestamp</c>
+/// (l'heure de <c>ts</c> n'est que l'émission de l'enveloppe) et ignore les enveloppes
+/// d'un autre type (log) comme les anciens messages plats.
+/// L'heure est ensuite transmise via <c>onTime</c> en secondes Unix.
 /// Reconnexion automatique tant que l'abonnement est actif.
 /// </summary>
 public sealed class MqttTimeSubscriber : IDisposable
@@ -176,7 +178,7 @@ public sealed class MqttTimeSubscriber : IDisposable
                     }
 
                     var payload = Encoding.UTF8.GetString(publish.Value.Payload);
-                    var unixTimeStamp = TimeStore.Parse(payload);
+                    var unixTimeStamp = TimeStore.ParseSample(payload);
                     if (unixTimeStamp is long value)
                     {
                         _onTime(value);

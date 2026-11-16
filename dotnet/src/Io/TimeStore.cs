@@ -8,23 +8,23 @@ namespace BackOffice.Io;
 /// Heure du commerce, source indépendante du business : les messages du topic MQTT
 /// d'heure (voir <see cref="Mqtt.MqttTimeSubscriber"/>) et le fichier « time.json »
 /// (<c>data/time.json</c> à côté des données ou du binaire).
-/// Le décodage est tolérant (voir <see cref="Parse"/>) : les échantillons de temps
-/// peuvent changer de forme sans bloquer l'horloge.
+/// Les messages MQTT suivent le contrat d'enveloppe UMDD (voir <see cref="ParseSample"/>),
+/// le fichier garde son format classique (voir <see cref="Parse"/>).
 /// Le fichier est relu régulièrement et n'est jamais réécrit.
 /// </summary>
 public static class TimeStore
 {
     public const string FileName = "time.json";
 
-    /// <summary>Clés d'objet qui portent directement l'horodatage (comparaison sans casse).</summary>
+    /// <summary>Clés d'objet qui portent directement l'horodatage dans time.json (sans casse).</summary>
     private static readonly HashSet<string> TimeKeys = new(StringComparer.OrdinalIgnoreCase)
     {
         "UnixTimeStamp", "UnixTimestamp", "TimeStamp", "Timestamp", "time", "ts",
         "epoch", "epochSeconds", "epochMillis", "seconds", "milliseconds", "ms",
-        "date", "datetime", "now", "utc", "utcTime", "sampleTime", "value",
+        "date", "datetime", "now", "utc", "utcTime", "value",
     };
 
-    /// <summary>Profondeur maximale d'exploration d'un échantillon (objets / tableaux imbriqués).</summary>
+    /// <summary>Profondeur maximale d'exploration du fichier (objets / tableaux imbriqués).</summary>
     private const int MaxDepth = 4;
 
     /// <summary>
@@ -85,18 +85,8 @@ public static class TimeStore
     }
 
     /// <summary>
-    /// Horodatage (secondes Unix) d'un échantillon de temps, par exemple un message MQTT.
-    /// Accepte, dans cet ordre :
-    /// <list type="bullet">
-    /// <item>un nombre : secondes Unix, ou millisecondes / microsecondes / nanosecondes
-    /// (converti automatiquement quand la valeur est trop grande pour des secondes) ;</item>
-    /// <item>une chaîne : nombre en texte ou date ISO 8601 (<c>2026-11-16T10:42:07Z</c>,
-    /// avec ou sans fuseau) ;</item>
-    /// <item>un objet : la première propriété reconnue (<c>UnixTimeStamp</c>, <c>timestamp</c>,
-    /// <c>time</c>, <c>ts</c>, <c>date</c>, <c>value</c>…)</item>
-    /// <item>un objet ou un tableau enveloppant l'échantillon (<c>{ "sample": { … } }</c>,
-    /// <c>[ { … } ]</c>) ; pour un tableau, l'horodatage le plus récent l'emporte.</item>
-    /// </list>
+    /// Horodatage (secondes Unix) d'un contenu de time.json :
+    /// <c>{ "UnixTimeStamp": 1794218169 }</c>, un nombre direct ou une date ISO 8601.
     /// null si illisible ou invalide.
     /// </summary>
     public static long? Parse(string json)
@@ -117,11 +107,83 @@ public static class TimeStore
         }
     }
 
+    /// <summary>
+    /// Horodatage (secondes Unix) d'un message de temps MQTT, au format du contrat
+    /// d'enveloppe UMDD (<c>doc/contracts/envelope.schema.json</c>) :
+    /// <code>
+    /// {
+    ///   "v": 1,
+    ///   "id": "3f6c2a9e-8b41-4d7a-9c5e-1a2b3c4d5e6f",
+    ///   "from": "SERV-time",
+    ///   "to": "*",
+    ///   "ts": "2026-11-09T09:56:09Z",
+    ///   "type": "time",
+    ///   "payload": { "timestamp": 1794218169 }
+    /// }
+    /// </code>
+    /// L'heure retenue est <c>payload.timestamp</c> (secondes Unix) ; <c>ts</c> n'est que
+    /// l'horodatage d'émission de l'enveloppe et n'est pas utilisé comme heure.
+    /// Sont refusés : <c>v</c> absent ou différent de 1, <c>type</c> différent de
+    /// <c>time</c> (par exemple une enveloppe de log), <c>payload.timestamp</c> absent,
+    /// et les anciens messages plats <c>{ "UnixTimeStamp": … }</c>.
+    /// null si le message n'est pas une enveloppe de temps valide.
+    /// </summary>
+    public static long? ParseSample(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return ReadEnvelope(document.RootElement);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     /// <summary>Heure à afficher : celle du fichier time.json, sinon l'heure du PC.</summary>
     public static long Resolve(string? businessFile)
         => Read(businessFile) ?? Validation.CurrentUnixTime();
 
-    /// <summary>Explore un élément JSON et renvoie le premier horodatage exploitable.</summary>
+    /// <summary>Valide l'enveloppe du contrat UMDD et lit <c>payload.timestamp</c>.</summary>
+    private static long? ReadEnvelope(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        if (!root.TryGetProperty("v", out var version)
+            || version.ValueKind != JsonValueKind.Number
+            || !version.TryGetInt32(out var contractVersion)
+            || contractVersion != 1)
+        {
+            return null;
+        }
+
+        if (!root.TryGetProperty("type", out var type)
+            || type.ValueKind != JsonValueKind.String
+            || !string.Equals(type.GetString(), "time", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (!root.TryGetProperty("payload", out var payload)
+            || payload.ValueKind != JsonValueKind.Object
+            || !payload.TryGetProperty("timestamp", out var timestamp))
+        {
+            return null;
+        }
+
+        return ReadNumber(timestamp);
+    }
+
+    /// <summary>Explore un contenu de time.json et renvoie le premier horodatage exploitable.</summary>
     private static long? ReadUnixTime(JsonElement element, int depth)
     {
         if (depth > MaxDepth)
@@ -139,7 +201,6 @@ public static class TimeStore
 
             case JsonValueKind.Array:
             {
-                // Lot d'échantillons : on garde le plus récent.
                 long? latest = null;
                 foreach (var item in element.EnumerateArray())
                 {
@@ -164,7 +225,7 @@ public static class TimeStore
                     }
                 }
 
-                // 2. objet enveloppe : n'importe quelle propriété imbriquée (sample, data…).
+                // 2. objet enveloppe : n'importe quelle propriété imbriquée.
                 foreach (var property in element.EnumerateObject())
                 {
                     if (property.Value.ValueKind is not (JsonValueKind.Object or JsonValueKind.Array))
@@ -188,6 +249,11 @@ public static class TimeStore
 
     private static long? ReadNumber(JsonElement element)
     {
+        if (element.ValueKind != JsonValueKind.Number)
+        {
+            return null;
+        }
+
         if (element.TryGetInt64(out var integer))
         {
             return NormalizeToSeconds(integer);
