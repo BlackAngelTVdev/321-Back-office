@@ -6,8 +6,11 @@ namespace BackOffice.Mqtt;
 
 /// <summary>
 /// Abonnement MQTT 3.1.1 (QoS 0) à un topic d'heure, par exemple
-/// <c>umddcmid3b/time</c> avec <c>{ "UnixTimeStamp": 1794218169 }</c>.
-/// Chaque message reçu est décodé puis transmis via <c>onTime</c>.
+/// <c>umddcmid3b/time</c>. Chaque échantillon reçu est décodé par
+/// <see cref="TimeStore.Parse"/>, qui accepte les évolutions de format
+/// (nombre en secondes ou millisecondes, date ISO 8601, objet
+/// <c>{ "UnixTimeStamp": … }</c> ou <c>{ "time": … }</c>, échantillon enveloppé),
+/// puis transmis via <c>onTime</c> en secondes Unix.
 /// Reconnexion automatique tant que l'abonnement est actif.
 /// </summary>
 public sealed class MqttTimeSubscriber : IDisposable
