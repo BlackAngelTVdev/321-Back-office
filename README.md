@@ -63,7 +63,7 @@ dotnet/Program.cs            point d'entrée + modes --dump / --publish
 dotnet/App.axaml(.cs)        application Avalonia (thème sombre)
 dotnet/src/Model/            BusinessProfile, Product, OpeningHours, Validation
 dotnet/src/Io/               BusinessStore (JSON), ImageLoader (chemins + base64), EnvFile (.env)
-dotnet/src/Mqtt/             MqttPublisher (MQTT 3.1.1 QoS 0)
+dotnet/src/Mqtt/             MqttPublisher / MqttTimeSubscriber / MqttLogPublisher (MQTT 3.1.1 QoS 0)
 dotnet/src/Cli/              CliCommands (--dump / --publish)
 dotnet/src/Ui/               MainWindow (XAML + code), Dialogues, lignes de liste
 data/                        business.json (COM-0112) + exemple-business-externe.json + time.json (heure)
@@ -181,6 +181,7 @@ Le business porte ses horaires, éditables directement dans la fiche du commerce
 - **Afficher un autre BP** : bouton *Ouvrir un business…* ou argument en ligne de commande. Un exemple est fourni : `data/exemple-business-externe.json` (COM-0042, « Le Mille-Miettes »).
 - **Exporter en un fichier** : les images sont intégrées en base64, ce qui donne **un seul `.json`** à envoyer par Discord.
 - **Publier en MQTT** : bouton *Publier (MQTT)* ou mode CLI.
+- **Journaliser ouvert / fermé** : chaque transition publie un log UMDD sur le topic des logs.
 - Validation systématique : ID hors format, ID produit en double, produit phare inexistant, prix négatif, images manquantes (avertissement, pas blocage).
 
 Au démarrage, l'interface charge `data/exemple-business-externe.json` : **COM-0042 « Le Mille-Miettes »**, produit phare **PROD-0104 « Tarte aux myrtilles »**, l'heure venant de `data/time.json`. Le bouton *Mes données* ouvre `data/business.json` : **COM-0112 « DJ Dam's »**, produit phare **PROD-1109 « eclair au chocolat »**.
@@ -212,6 +213,7 @@ Le back-office publie le business sérialisé (JSON compact) sur un topic, en MQ
 | `BACKOFFICE_MQTT_TOPIC` | `umddcmid3b/business` | topic de publication (**requis** pour le bouton) |
 | `BACKOFFICE_MQTT_USERNAME` / `BACKOFFICE_MQTT_PASSWORD` | `ict` / `…` | identifiants du broker |
 | `BACKOFFICE_MQTT_TIME_TOPIC` | `umddcmid3b/dg/time` | topic d'heure, abonnement automatique |
+| `BACKOFFICE_MQTT_LOG_TOPIC` | `umddcmid3b/log` | topic des logs ouvert/fermé (défaut : `umddcmid3b/log`) |
 | `BACKOFFICE_MQTT_CLIENT_ID` | `backoffice-dj-dams` | optionnel |
 
 ### Fichier `.env`
@@ -225,6 +227,7 @@ BACKOFFICE_MQTT_USERNAME=ict
 BACKOFFICE_MQTT_PASSWORD=…
 BACKOFFICE_MQTT_TIME_TOPIC=umddcmid3b/dg/time
 BACKOFFICE_MQTT_TOPIC=umddcmid3b/business
+BACKOFFICE_MQTT_LOG_TOPIC=umddcmid3b/log
 ```
 
 Abonnement à l'heure, sans interface :
@@ -241,6 +244,31 @@ BACKOFFICE_MQTT_URL=mqtt://localhost:1883 BACKOFFICE_MQTT_TOPIC=321/business \
 ```
 
 Le bouton *Publier (MQTT)* est désactivé tant que `BACKOFFICE_MQTT_TOPIC` n'est pas défini.
+
+### Logs ouvert / fermé
+
+À chaque **transition** du badge (fermée → ouverte ou l'inverse), l'application publie
+une enveloppe UMDD de type `log` sur `BACKOFFICE_MQTT_LOG_TOPIC` (défaut `umddcmid3b/log`),
+archivée par SERV-Log :
+
+```json
+{
+    "v": 1,
+    "id": "3f6c2a9e-8b41-4d7a-9c5e-1a2b3c4d5e6f",
+    "from": "COM-0112",
+    "to": "*",
+    "ts": "2026-11-23T09:14:02Z",
+    "type": "log",
+    "payload": { "level": "info", "text": "ma boutique est ouverte" }
+}
+```
+
+- Le texte est `ma boutique est ouverte` ou `ma boutique est fermée` ; `from` reprend
+  l'ID du commerce (`COM-XXXX`).
+- Le premier état affiché au chargement du business sert de référence : il n'est pas
+  publié, seules les transitions le sont (pas de doublon à chaque démarrage).
+- La publication se fait en arrière-plan pour ne pas bloquer l'interface ; une erreur
+  est signalée dans la barre d'état.
 
 ## Référence commune des modèles (TODO d'équipe)
 

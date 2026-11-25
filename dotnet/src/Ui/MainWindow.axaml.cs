@@ -36,6 +36,7 @@ public partial class MainWindow : Window
     private MqttTimeSubscriber? _timeSubscriber;
     private long? _mqttUnixTime;
     private DateTime _mqttReceivedUtc;
+    private bool? _openState;
 
     public MainWindow()
         : this(null)
@@ -174,6 +175,7 @@ public partial class MainWindow : Window
         IdBox.Text = _business.Id;
         NameBox.Text = _business.Name;
         LogoBox.Text = _business.Logo;
+        _openState = null;
         RefreshTimeLabel();
 
         RefreshSpecialCombo();
@@ -342,8 +344,9 @@ public partial class MainWindow : Window
     {
         var moment = DateTimeOffset.FromUnixTimeSeconds(unixTimeStamp).ToLocalTime();
         var hours = _business.HoursFor(moment.DayOfWeek);
+        var isOpen = OpeningHours.IsOpen(_business, moment);
 
-        if (OpeningHours.IsOpen(_business, moment))
+        if (isOpen)
         {
             OpenStatusLabel.Text = hours is not null
                 && Validation.TryParseTimeOfDay(hours.Close, out var closing)
@@ -351,22 +354,62 @@ public partial class MainWindow : Window
                 : "Ouvert";
             OpenStatusLabel.Foreground = OpenBrush;
             OpenStatusBadge.Background = OpenBadgeBrush;
-            return;
         }
-
-        if (hours is not null
+        else if (hours is not null
             && Validation.TryParseTimeOfDay(hours.Open, out var opening)
             && moment.TimeOfDay < opening)
         {
             OpenStatusLabel.Text = $"Fermé — ouvre à {Validation.FormatTimeOfDay(opening)}";
+            OpenStatusLabel.Foreground = ClosedBrush;
+            OpenStatusBadge.Background = ClosedBadgeBrush;
         }
         else
         {
             OpenStatusLabel.Text = hours is not null && !hours.IsClosed ? "Fermé" : "Fermé aujourd'hui";
+            OpenStatusLabel.Foreground = ClosedBrush;
+            OpenStatusBadge.Background = ClosedBadgeBrush;
         }
 
-        OpenStatusLabel.Foreground = ClosedBrush;
-        OpenStatusBadge.Background = ClosedBadgeBrush;
+        TrackOpenState(isOpen);
+    }
+
+    /// <summary>
+    /// Publie un log MQTT sur le topic d'archivage quand la boutique passe de fermée
+    /// à ouverte (ou l'inverse). Le premier état observé sert de référence et n'est
+    /// pas publié : seules les transitions le sont.
+    /// </summary>
+    private void TrackOpenState(bool isOpen)
+    {
+        var previous = _openState;
+        _openState = isOpen;
+
+        if (previous is null || previous == isOpen)
+        {
+            return;
+        }
+
+        PublishOpenState(isOpen);
+    }
+
+    private void PublishOpenState(bool isOpen)
+    {
+        var config = MqttLogPublisher.ConfigFromEnvironment();
+        if (config is null || string.IsNullOrWhiteSpace(config.Topic))
+        {
+            return;
+        }
+
+        var from = Validation.IsValidBusinessId(_business.Id) ? _business.Id : "321-backoffice";
+        var text = isOpen ? "DJ Dam's est ouverte" : "DJ Dam's est fermée";
+
+        _ = Task.Run(() =>
+        {
+            MqttLogPublisher.Publish(config, from, text, out var error);
+            if (error is not null)
+            {
+                Dispatcher.UIThread.Post(() => ShowStatus($"Log MQTT : {error}", 6000));
+            }
+        });
     }
 
     /// <summary>Sept lignes « jour / ouverture / fermeture » dans la fiche du commerce.</summary>
